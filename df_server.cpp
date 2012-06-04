@@ -26,9 +26,13 @@
 #include <map>
 #include <algorithm> 
 
+#include "packet.h"
+
 #define MAX_PACKET_SZ    1024
 #define MULTICAST_PORT   60001
 #define MULTICAST_GRP    "225.0.0.6"
+
+
 
 
 using namespace std;
