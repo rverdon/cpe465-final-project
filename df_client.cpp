@@ -24,6 +24,7 @@
 #include <list>
 #include <string>
 #include <map>
+#include <queue>
 #include <algorithm> 
 
 #include "packet.h"
@@ -34,6 +35,10 @@
 
 using namespace std;
 
+bool check_if_needed(uint32_t i, list<uint32_t>* l);
+void add_data_to_file(FILE* file, df_packet* p);
+bool check_indicies(uint32_t index, uint32_t* arr, uint32_t size);
+void remove_index(uint32_t index, uint32_t* arr, uint32_t size);
 
 /**
  * @param argc Number of arguements.
@@ -49,6 +54,12 @@ main(int argc, char *argv[])
     uint32_t yes                 =  1;
     struct   ip_mreq mreq;
     struct   sockaddr_in addr;
+    FILE*    file                = NULL;
+    list<uint32_t>* to_do        = new list<uint32_t>();
+    list<df_packet*>* packets     = new list<df_packet*>();
+    queue<df_packet*>* packet_queue = new queue<df_packet*>();
+    int filesize = -1;
+    int done = 0;
 
     if ((sk = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         perror("df_client.cpp, socket");
@@ -83,7 +94,7 @@ main(int argc, char *argv[])
     // Get a new buffer from our allocator
     packet_buffer = (unsigned char*) malloc(MAX_PACKET_SZ);
 
-    while (1) {
+    while (!done) {
         // Clear the buffer
         memset(packet_buffer, 0, MAX_PACKET_SZ);
 
@@ -91,11 +102,183 @@ main(int argc, char *argv[])
             perror("df_client.cpp, recvfrom");
             exit(EXIT_FAILURE);
         }
-        printf("Recieved %d bytes from %s\n", nbytes, inet_ntoa(addr.sin_addr));
-    }
+        df_packet* p = new df_packet();
+        p->parse_packet(packet_buffer);
+        p->debug_print();
+        
+        //Check if the file is open
+        if(file == NULL)
+        {
+           //If not create it
+           file = fopen((const char*)p->filename, "w+");
+           //Initialize to do index list       
+           for (unsigned int i = 0; i < p->num_chunks; i++)
+           {
+              to_do->push_back((uint32_t)i);
+           }
+           filesize = p->filesize;
+        }
 
+        //Add packet to queue
+        packet_queue->push(p);
+
+        //while queue isnt empty
+        while(packet_queue->size() != 0)
+        {
+           df_packet* packet = packet_queue->front();
+           packet_queue->pop();
+           //if packet degree is 1
+           if(packet->degree == 1)
+           {
+              //IF we need the index from the packet(otherwise ignore it, extra data)
+              if(check_if_needed(packet->indicies[0], to_do))
+              {
+                 //Add data to file
+                 add_data_to_file(file, packet);
+                 //remove index from to do list
+                 to_do->remove(packet->indicies[0]);
+                 //If !done
+                 if(to_do->size() != 0)
+                 {
+                    int num_packets = packets->size();
+                    //Search for packets with index, xor them
+                    for(int i = 0; i < num_packets;i++)
+                    {
+                       df_packet* temp = packets->front();
+                       int flag = 0;
+                       packets->pop_front();
+                       
+                       //IF temp contains packet index
+                       if(temp->degree != 1 && check_indicies(p->indicies[0], temp->indicies, temp->degree))
+                       {
+                          //XOR DATA
+                          temp->xor_data_from_buffer(packet->data,packet->chunk_size);
+                          //DECREMENT degree
+                          temp->degree--;
+                          //Remove index
+                          remove_index(packet->indicies[0], temp->indicies, temp->degree);
+                          flag = 1;
+                       }
+
+                       //If degree becomes 1 add to queue
+                       if(temp->degree == 1 && flag)
+                       {
+                          packet_queue->push(temp);
+                       }
+                       else
+                       {
+                          packets->push_back(temp);
+                       }
+                    }
+                 }
+                 else
+                 {
+                    done = 1;
+                 }
+                 packets->push_back(packet);
+              }
+           }
+           else
+           {
+              //Find all degree 1 packets and xor data into cur packet
+              int num_packets = packets->size();
+              //Search for packets with index, xor them
+              for(int i = 0; i < num_packets;i++)
+              {
+                 df_packet* temp = packets->front();
+                 packets->pop_front();         
+                 
+                 if(temp->degree == 1)
+                 {
+                    //if packet contains temp's index
+                    if(check_indicies(temp->indicies[0], packet->indicies, packet->degree))
+                    {
+                       //XOR DATA
+                       packet->xor_data_from_buffer(temp->data,temp->chunk_size);
+                       //DECREMENT degree
+                       packet->degree--;
+                       //Remove index
+                       remove_index(temp->indicies[0], packet->indicies, packet->degree);
+                    }
+                 }
+                 packets->push_back(temp);
+              }
+
+              //If degree becomes 1
+              if(packet->degree == 1)
+              {
+                 //add to queue
+                 packet_queue->push(packet);
+              }
+              else
+              {
+                 //Add to packet list
+                 packets->push_back(packet);
+              }
+           }
+         }
+    }
+    
+    int fd = fileno(file);
+    //Truncate file
+    ftruncate(fd, filesize);
+    
+    fclose(file);
+
+    delete(to_do);
+    delete(packets);
     free(packet_buffer);
     return 0;
+}
+
+void add_data_to_file(FILE* file, df_packet* p)
+{
+   fseek(file, p->indicies[0]*p->chunk_size, 0);
+   fwrite(p->data, 1, p->chunk_size, file);
+   fflush(file);
+}
+
+bool check_if_needed(uint32_t i, list<uint32_t>* l)
+{
+   list<uint32_t>::iterator itr;
+   bool not_found = true;
+
+   for (itr=l->begin() ; itr != l->end() ; itr++)
+   {
+      if((uint32_t)&itr == i)
+      {
+         not_found = false;
+      }
+   }
+
+   return not_found;
+}
+
+bool check_indicies(uint32_t index, uint32_t* arr, uint32_t size)
+{
+   bool found = false;
+   for(unsigned int i = 0; i < size; i++)
+   {
+      if(arr[i] == index)
+      {
+         found = true;  
+      }
+   }
+   return found;
+}
+
+void remove_index(uint32_t index, uint32_t* arr, uint32_t size)
+{
+   int i = 0;
+   while(arr[i] != index)
+   {
+      i++;
+   }
+   
+   for(unsigned int x = 0; x + i < size; x++)
+   {
+      arr[i+x] = arr[i+x+1];
+   }
 }
 
 

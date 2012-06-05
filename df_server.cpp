@@ -25,17 +25,19 @@
 #include <string>
 #include <map>
 #include <algorithm> 
+#include <sys/stat.h>
 
 #include "packet.h"
 
 #define MAX_PACKET_SZ    1024
 #define MULTICAST_PORT   60001
 #define MULTICAST_GRP    "225.0.0.6"
-
-
-
+#define CHUNK_SIZE       512
 
 using namespace std;
+
+void random_indicies(uint32_t* arr, uint32_t degree, int num_chunks);
+bool check_uniqueness(uint32_t i, list<uint32_t> *l);
 
 
 /**
@@ -45,12 +47,18 @@ using namespace std;
 int
 main(int argc, char *argv[])
 {
-    unsigned char* buffer      = NULL;
+    unsigned char*      buffer      = NULL;
     size_t              psz    = 0;
     uint32_t            sk     = 0;
     struct sockaddr_in  addr;
+    int                 sz = 0;
+    int                 numc = 0;
+    FILE*               file = NULL;
+    struct stat         st;
 
-    if(argc < 1)
+    srand((unsigned)time(0));
+
+    if(argc < 2)
     {
         printf("ERROR: ./df_server <file name>\n");
         exit(EXIT_FAILURE);
@@ -69,13 +77,88 @@ main(int argc, char *argv[])
     psz     = MAX_PACKET_SZ;
     buffer  = (unsigned char*)malloc(psz);
 
-    if (sendto(sk, buffer, psz, 0, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
-        perror("df_server.h, join, sendto");
-        exit(EXIT_FAILURE);
+    //Open file
+    file = fopen(argv[1], "r");
+    if(file == NULL)
+    {
+       perror("df_server.h, Open failed");
+       exit(EXIT_FAILURE);
     }
-            
+    int fd = fileno(file);
+    //Figure out # of chunks
+    fstat(fd, &st);
+    numc = (st.st_size / CHUNK_SIZE)+ 1;
+    printf("Number of chunks is %d\n", numc);
+
+    while(1) 
+    {
+       //Clear buffer
+       memset(buffer, 0, psz);
+       //New df_packet
+       df_packet* p = new df_packet();
+       //Setup meta data
+       memcpy(p->filename, argv[1], strlen(argv[1])+1);
+       p->filename_size = strlen(argv[1])+1;
+       p->chunk_size = CHUNK_SIZE;
+       p->num_chunks = numc;
+       p->filesize = st.st_size;
+       //Random degree(d)
+       p->degree = 1;//(rand() % numc) + 1; // 1 <= d <= num_chunks
+       //Choose d unique indicies
+       random_indicies(p->indicies , p->degree, numc);
+       //Xor data
+       for (unsigned int i = 0 ; i < p->degree; i++)
+       {
+          p->xor_data_from_file(file, p->indicies[i], p->chunk_size);
+       }
+       
+       //p->debug_print();       
+       sz = p->write_packet(buffer);
+       //Send data
+       if (sendto(sk, buffer, sz, 0, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
+          perror("df_server.h, join, sendto");
+          exit(EXIT_FAILURE);
+       }
+
+       delete(p);
+    }
     free(buffer);
     return 0;
+}
+
+void 
+random_indicies(uint32_t* arr, uint32_t degree, int num_chunks)
+{
+   list<uint32_t>* l = new list<uint32_t>();
+   uint32_t num = 0;
+   uint32_t i = -1;
+   while(num != degree)
+   {
+      i = (rand() % num_chunks);
+      //IF the indicies is new
+      if(check_uniqueness(i, l))
+      {
+         l->push_back(i);
+         arr[num] = i;
+         num++;
+      }      
+   }
+}
+
+bool check_uniqueness(uint32_t i, list<uint32_t>* l)
+{
+   list<uint32_t>::iterator itr;
+   bool not_found = true;
+
+   for (itr=l->begin() ; itr != l->end() ; itr++)
+   {
+      if((uint32_t)&itr == i)
+      {
+         not_found = false;
+      }
+   }
+
+   return not_found;
 }
 
 
