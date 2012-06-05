@@ -53,7 +53,7 @@ main(int argc, char *argv[])
     struct sockaddr_in  addr;
     int                 sz = 0;
     int                 numc = 0;
-    FILE*               file = NULL;
+    int                 file = NULL;
     struct stat         st;
 
     srand((unsigned)time(0));
@@ -78,15 +78,14 @@ main(int argc, char *argv[])
     buffer  = (unsigned char*)malloc(psz);
 
     //Open file
-    file = fopen(argv[1], "r");
-    if(file == NULL)
+    file = open(argv[1], O_RDONLY);
+    if(file == -1)
     {
        perror("df_server.h, Open failed");
        exit(EXIT_FAILURE);
     }
-    int fd = fileno(file);
     //Figure out # of chunks
-    fstat(fd, &st);
+    fstat(file, &st);
     numc = (st.st_size / CHUNK_SIZE)+ 1;
     printf("Number of chunks is %d\n", numc);
 
@@ -103,7 +102,14 @@ main(int argc, char *argv[])
        p->num_chunks = numc;
        p->filesize = st.st_size;
        //Random degree(d)
-       p->degree = 1;//(rand() % numc) + 1; // 1 <= d <= num_chunks
+       if(numc <= 50)
+       {
+          p->degree = (rand() % numc) + 1; // 1 <= d <= num_chunks
+       }
+       else 
+       {
+          p->degree = (rand() % 50) + 1;// LIMIT BECAUSE OF MTU!
+       }
        //Choose d unique indicies
        random_indicies(p->indicies , p->degree, numc);
        //Xor data
@@ -112,8 +118,9 @@ main(int argc, char *argv[])
           p->xor_data_from_file(file, p->indicies[i], p->chunk_size);
        }
        
-       //p->debug_print();       
+       p->debug_print();       
        sz = p->write_packet(buffer);
+       printf("SIZE = %d\n", sz);
        //Send data
        if (sendto(sk, buffer, sz, 0, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
           perror("df_server.h, join, sendto");
@@ -122,6 +129,8 @@ main(int argc, char *argv[])
 
        delete(p);
     }
+
+    close(file);
     free(buffer);
     return 0;
 }
@@ -152,7 +161,7 @@ bool check_uniqueness(uint32_t i, list<uint32_t>* l)
 
    for (itr=l->begin() ; itr != l->end() ; itr++)
    {
-      if((uint32_t)&itr == i)
+      if((uint32_t)*itr == i)
       {
          not_found = false;
       }

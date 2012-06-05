@@ -4,7 +4,7 @@
  */
 
 #define MAX_FILENAME_SIZE 200
-#define MAX_INDICIES 500
+#define MAX_INDICIES 200
 #define MAX_DATA_SIZE 512
 
 class df_packet {
@@ -126,15 +126,15 @@ class df_packet {
        ptr+=chunk_size;
     }
  
-    void xor_data_from_file(FILE* fp, uint32_t index, int size)
+    void xor_data_from_file(int fd, uint32_t index, int size)
     {
        //printf("XOR DATA FROM FILE!\n");
-       //printf("OFFSET = %d\n", index*size);
+       //printf("OFFSET = %d, filesize = %d\n", index*size, filesize);
        unsigned char buffer[MAX_DATA_SIZE];
        memset(buffer, 0, MAX_DATA_SIZE);
        //MOVE the file cursor
-       fseek(fp, index*size, 0);
-       fread(buffer, 1, size, fp);
+       lseek(fd, index*size, 0);
+       read(fd, buffer, size);
        xor_data_from_buffer(buffer, size);
     }
 
