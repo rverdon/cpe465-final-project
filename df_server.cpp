@@ -102,13 +102,13 @@ main(int argc, char *argv[])
        p->num_chunks = numc;
        p->filesize = st.st_size;
        //Random degree(d)
-       if(numc <= 50)
+       if(numc <= 10)
        {
           p->degree = (rand() % numc) + 1; // 1 <= d <= num_chunks
        }
        else 
        {
-          p->degree = (rand() % 50) + 1;// LIMIT BECAUSE OF MTU!
+          p->degree = (rand() % 10) + 1;// LIMIT BECAUSE OF PERFORMANCE!
        }
        //Choose d unique indicies
        random_indicies(p->indicies , p->degree, numc);
