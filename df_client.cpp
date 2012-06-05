@@ -152,7 +152,7 @@ main(int argc, char *argv[])
                  //remove index from to do list
                  to_do->remove(packet->indicies[0]);
 
-                 printf("\r...%%%.1f done", (double)(packet->num_chunks- to_do->size())/packet->num_chunks * 100);
+                 printf("\r%s...%%%.1f done",packet->filename, (double)(packet->num_chunks- to_do->size())/packet->num_chunks * 100);
                  //If !done
                  if(to_do->size() != 0)
                  {
