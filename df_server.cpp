@@ -118,9 +118,8 @@ main(int argc, char *argv[])
           p->xor_data_from_file(file, p->indicies[i], p->chunk_size);
        }
        
-       p->debug_print();       
+       //p->debug_print();       
        sz = p->write_packet(buffer);
-       printf("SIZE = %d\n", sz);
        //Send data
        if (sendto(sk, buffer, sz, 0, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
           perror("df_server.h, join, sendto");

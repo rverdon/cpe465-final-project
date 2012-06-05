@@ -60,6 +60,11 @@ main(int argc, char *argv[])
     queue<df_packet*>* packet_queue = new queue<df_packet*>();
     int filesize = -1;
     int done = 0;
+    long num_packets_received = 0;
+    long degree_one_packets = 0;
+    long data_received = 0;
+
+    setvbuf(stdout, NULL, _IONBF, 0);
 
     if ((sk = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         perror("df_client.cpp, socket");
@@ -94,6 +99,8 @@ main(int argc, char *argv[])
     // Get a new buffer from our allocator
     packet_buffer = (unsigned char*) malloc(MAX_PACKET_SZ);
 
+    printf("Starting...\n");
+
     while (!done) {
         // Clear the buffer
         memset(packet_buffer, 0, MAX_PACKET_SZ);
@@ -102,9 +109,16 @@ main(int argc, char *argv[])
             perror("df_client.cpp, recvfrom");
             exit(EXIT_FAILURE);
         }
+        data_received+=nbytes;
+        num_packets_received++;
         df_packet* p = new df_packet();
         p->parse_packet(packet_buffer);
-        p->debug_print();
+        //p->debug_print();
+
+        if(p->degree == 1)
+        {
+           degree_one_packets++;
+        }
         
         //Check if the file is open
         if(file == NULL)
@@ -137,6 +151,8 @@ main(int argc, char *argv[])
                  add_data_to_file(file, packet);
                  //remove index from to do list
                  to_do->remove(packet->indicies[0]);
+
+                 printf("\r...%%%.1f done", (double)(packet->num_chunks- to_do->size())/packet->num_chunks * 100);
                  //If !done
                  if(to_do->size() != 0)
                  {
@@ -218,6 +234,13 @@ main(int argc, char *argv[])
            }
          }
     }
+ 
+    printf("\nFinished.\n");
+    printf("\nResults\n");
+    printf("Received %ld packets.\n", num_packets_received);
+    printf("Received %ld bytes.\n", data_received);
+    printf("Received %ld packets of degree 1.\n", degree_one_packets);
+    printf("Received %ld packets of degree != 1.\n", num_packets_received - degree_one_packets);
     
     int fd = fileno(file);
     //Truncate file
